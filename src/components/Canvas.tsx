@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -18,22 +18,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { useStore, type NodeData, type AppMode } from "@/store/useStore";
+import { useStore, generateInitialNodes, type NodeData, type AppMode } from "@/store/useStore";
 import { nodeTypes } from "@/lib/nodeTypes";
-
-const INITIAL_NODES: Node<NodeData>[] = [
-  {
-    id: "root",
-    type: "skill",
-    position: { x: 400, y: 280 },
-    data: {
-      label: "Start Here",
-      description: "Double-click any node to generate branches. Single-click to inspect.",
-      type: "root",
-      depth: 0,
-    },
-  },
-];
 
 const BG_VARIANT: Record<AppMode, BackgroundVariant> = {
   "skill-tree": BackgroundVariant.Dots,
@@ -51,19 +37,15 @@ const MINIMAP_COLOR: Record<AppMode, string> = {
   detective: "#8B4513",
 };
 
-/**
- * Canvas — React Flow full-screen workspace.
- *
- * State architecture (no circular loops):
- * - Canvas owns node/edge positions via useNodesState / useEdgesState
- * - Store signals new nodes via `pendingAddition` — Canvas merges them in and
- *   calls `clearPendingAddition` (one-way: store → canvas)
- * - Canvas reports counts back to store via debounced setNodeCount/setEdgeCount
- *   (one-way: canvas → store stats only, never triggers re-sync)
- */
+interface XpToast {
+  id: number;
+  amount: number;
+}
+
 export default function Canvas() {
   const {
     currentMode,
+    masterTopic,
     pendingAddition,
     clearPendingAddition,
     generatingIds,
@@ -71,41 +53,41 @@ export default function Canvas() {
     setNodeCount,
     setEdgeCount,
     generateBranch,
+    addXp,
+    resetToLanding,
   } = useStore();
 
-  const [nodes, setLocalNodes, onNodesChange] = useNodesState<Node<NodeData>>(INITIAL_NODES);
-  const [edges, setLocalEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  // Build initial graph from the mastery topic
+  const initialGraph = generateInitialNodes(masterTopic, currentMode);
+  const [nodes, setLocalNodes, onNodesChange] = useNodesState<Node<NodeData>>(initialGraph.nodes);
+  const [edges, setLocalEdges, onEdgesChange] = useEdgesState<Edge>(initialGraph.edges);
+  const [xpToasts, setXpToasts] = useState<XpToast[]>([]);
+  const toastCounter = useRef(0);
 
-  // ── Consume pending additions from generateBranch ──────────────────────────
+  // ── Consume pending additions ──────────────────────────────────────────────
   useEffect(() => {
     if (!pendingAddition) return;
     setLocalNodes((prev) => [...prev, ...(pendingAddition.nodes as Node<NodeData>[])]);
     setLocalEdges((prev) => [...prev, ...pendingAddition.edges]);
     clearPendingAddition();
+
+    // XP toast
+    const id = ++toastCounter.current;
+    setXpToasts((t) => [...t, { id, amount: 150 }]);
+    setTimeout(() => setXpToasts((t) => t.filter((x) => x.id !== id)), 2000);
   }, [pendingAddition, setLocalNodes, setLocalEdges, clearPendingAddition]);
 
-  // ── Sync generating state onto nodes (visual pulse) ─────────────────────────
+  // ── Sync generating state ──────────────────────────────────────────────────
   useEffect(() => {
-    if (generatingIds.size === 0) return;
     setLocalNodes((prev) =>
-      prev.map((n) =>
-        generatingIds.has(n.id)
-          ? { ...n, data: { ...n.data, isGenerating: true } }
-          : { ...n, data: { ...n.data, isGenerating: false } }
-      )
+      prev.map((n) => ({
+        ...n,
+        data: { ...n.data, isGenerating: generatingIds.has(n.id) },
+      }))
     );
   }, [generatingIds, setLocalNodes]);
 
-  useEffect(() => {
-    if (generatingIds.size > 0) return;
-    setLocalNodes((prev) =>
-      prev.map((n) =>
-        n.data.isGenerating ? { ...n, data: { ...n.data, isGenerating: false } } : n
-      )
-    );
-  }, [generatingIds, setLocalNodes]);
-
-  // ── Report counts to store (debounced, never triggers re-sync) ───────────────
+  // ── Report counts (debounced) ──────────────────────────────────────────────
   const statsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (statsTimer.current) clearTimeout(statsTimer.current);
@@ -113,31 +95,30 @@ export default function Canvas() {
       setNodeCount(nodes.length);
       setEdgeCount(edges.length);
     }, 200);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes.length, edges.length]);
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleNodesChange: OnNodesChange<Node<NodeData>> = useCallback(
     (changes) => onNodesChange(changes),
     [onNodesChange]
   );
-
   const handleEdgesChange: OnEdgesChange = useCallback(
     (changes) => onEdgesChange(changes),
     [onEdgesChange]
   );
-
   const onConnect = useCallback(
     (params: Connection) =>
       setLocalEdges((eds) => addEdge({ ...params, animated: true, type: "smoothstep" }, eds)),
     [setLocalEdges]
   );
-
   const onNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => setSelectedNode(node as Node<NodeData>),
-    [setSelectedNode]
+    (_: React.MouseEvent, node: Node) => {
+      setSelectedNode(node as Node<NodeData>);
+      addXp(25);
+    },
+    [setSelectedNode, addXp]
   );
-
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       const data = node.data as NodeData;
@@ -145,7 +126,6 @@ export default function Canvas() {
     },
     [generateBranch]
   );
-
   const onPaneClick = useCallback(() => setSelectedNode(null), [setSelectedNode]);
 
   return (
@@ -169,13 +149,13 @@ export default function Canvas() {
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
-        minZoom={0.08}
+        fitViewOptions={{ padding: 0.18 }}
+        minZoom={0.05}
         maxZoom={2.5}
         defaultEdgeOptions={{
           animated: true,
           type: "smoothstep",
-          style: { stroke: "var(--edge-color)", strokeWidth: 2 },
+          style: { stroke: "var(--edge-color, var(--border-node))", strokeWidth: 2 },
         }}
         style={{ background: "transparent" }}
         proOptions={{ hideAttribution: true }}
@@ -204,30 +184,87 @@ export default function Canvas() {
         />
       </ReactFlow>
 
-      {nodes.length === 1 && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 80,
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "rgba(0,0,0,0.65)",
-            backdropFilter: "blur(10px)",
-            border: "1px solid var(--border-node)",
-            borderRadius: 10,
-            padding: "10px 20px",
-            fontSize: 12,
-            color: "var(--text-muted)",
-            pointerEvents: "none",
-            textAlign: "center",
-            whiteSpace: "nowrap",
-            fontFamily: "var(--font-family)",
-            boxShadow: "0 0 20px var(--glow-color)",
-          }}
-        >
-          ✦ Double-click to branch · Single-click to inspect
-        </div>
-      )}
+      {/* Hint bar */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 20,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "rgba(0,0,0,0.65)",
+          backdropFilter: "blur(10px)",
+          border: "1px solid var(--border-node)",
+          borderRadius: 10,
+          padding: "8px 18px",
+          fontSize: 11,
+          color: "var(--text-muted)",
+          pointerEvents: "none",
+          textAlign: "center",
+          whiteSpace: "nowrap",
+          fontFamily: "var(--font-family)",
+          boxShadow: "0 0 20px var(--glow-color)",
+        }}
+      >
+        ✦ Double-click to branch · Single-click to inspect · Drag to explore
+      </div>
+
+      {/* Back button */}
+      <button
+        id="back-to-landing"
+        onClick={resetToLanding}
+        title="Choose new topic"
+        style={{
+          position: "absolute",
+          top: 12,
+          left: 12,
+          padding: "6px 14px",
+          borderRadius: 8,
+          border: "1px solid var(--border-node)",
+          background: "rgba(0,0,0,0.5)",
+          backdropFilter: "blur(8px)",
+          color: "var(--text-muted)",
+          fontFamily: "var(--font-family)",
+          fontSize: 11,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          transition: "all 0.2s ease",
+          zIndex: 10,
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.color = "var(--text-primary)";
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.color = "var(--text-muted)";
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border-node)";
+        }}
+      >
+        ← New Topic
+      </button>
+
+      {/* XP toasts */}
+      <div style={{ position: "absolute", top: 60, right: 20, display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none", zIndex: 20 }}>
+        {xpToasts.map((t) => (
+          <div
+            key={t.id}
+            style={{
+              background: "var(--accent)",
+              color: "var(--bg-canvas)",
+              padding: "4px 12px",
+              borderRadius: 99,
+              fontSize: 12,
+              fontWeight: 800,
+              fontFamily: "var(--font-family)",
+              animation: "float-up 2s ease-out forwards",
+              boxShadow: "0 0 12px var(--glow-color)",
+            }}
+          >
+            +{t.amount} XP
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

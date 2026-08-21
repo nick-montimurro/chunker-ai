@@ -12,18 +12,11 @@ interface BaseNodeProps extends NodeProps {
 }
 
 export default function BaseNode({ data, selected, extraClass = "", children }: BaseNodeProps) {
-  const { currentMode, generateBranch } = useStore();
+  const { currentMode } = useStore();
   const isRoot = data.type === "root";
 
   return (
     <div
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        // id is injected by React Flow into the node via the `id` prop — access via data attribute
-        const el = (e.currentTarget as HTMLDivElement).closest("[data-id]") as HTMLElement | null;
-        const nodeId = el?.dataset?.id;
-        if (nodeId) generateBranch(nodeId, data.label);
-      }}
       style={{
         background: "var(--bg-node)",
         border: `2px solid ${selected ? "var(--accent)" : "var(--border-node)"}`,

@@ -6,6 +6,7 @@ import AppShell from "@/components/layout/AppShell";
 import TopNav from "@/components/layout/TopNav";
 import SideDrawer from "@/components/layout/SideDrawer";
 import PricingModal from "@/components/PricingModal";
+import LandingScreen from "@/components/LandingScreen";
 
 /**
  * Canvas uses browser-only APIs (ResizeObserver, DOM measurements).
@@ -44,28 +45,34 @@ const Canvas = dynamic(() => import("@/components/Canvas"), {
       >
         ✦
       </div>
-      <span style={{ color: "var(--text-muted)" }}>Initializing canvas…</span>
+      <span style={{ color: "var(--text-muted)" }}>Initializing neural canvas…</span>
     </div>
   ),
 });
 
 export default function HomePage() {
-  const { currentMode, selectedNode } = useStore();
+  const { currentMode, selectedNode, phase } = useStore();
 
   return (
     <AppShell mode={currentMode}>
-      <TopNav />
-      <main
-        style={{
-          flex: 1,
-          position: "relative",
-          display: "flex",
-          overflow: "hidden",
-        }}
-      >
-        <Canvas />
-        <SideDrawer node={selectedNode} />
-      </main>
+      {phase === "landing" ? (
+        <LandingScreen />
+      ) : (
+        <>
+          <TopNav />
+          <main
+            style={{
+              flex: 1,
+              position: "relative",
+              display: "flex",
+              overflow: "hidden",
+            }}
+          >
+            <Canvas />
+            <SideDrawer node={selectedNode} />
+          </main>
+        </>
+      )}
       {/* Pricing modal rendered at root level so it overlays everything */}
       <PricingModal />
     </AppShell>

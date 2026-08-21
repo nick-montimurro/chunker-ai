@@ -145,8 +145,18 @@ body {
   animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes float-up {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  70%  { opacity: 1; transform: translateY(-24px) scale(1.05); }
+  100% { opacity: 0; transform: translateY(-40px) scale(0.9); }
+}
+
 .animate-fade-in {
   animation: fade-in 0.25s ease forwards;
+}
+
+.animate-float-up {
+  animation: float-up 2s ease-out forwards;
 }
 
 /* ─── Corkboard Texture (Detective theme) ─── */

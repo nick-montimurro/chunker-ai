@@ -106,8 +106,8 @@ export function useMonetization(): UseMonetizationReturn {
           const details = await service.getDetails([productId]);
           if (!details || details.length === 0) return false;
 
-          // @ts-expect-error — Digital Goods API is not in TS stdlib yet
-          const paymentRequest = new PaymentRequest(
+          const PaymentRequestConstructor = (window as unknown as { PaymentRequest: typeof PaymentRequest }).PaymentRequest || PaymentRequest;
+          const paymentRequest = new PaymentRequestConstructor(
             [{ supportedMethods: PLAY_BILLING_SERVICE, data: { sku: productId } }],
             { total: { label: "Chunker-AI Pro", amount: { currency: "USD", value: "0" } } }
           );

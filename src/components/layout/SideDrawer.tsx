@@ -209,7 +209,12 @@ export default function SideDrawer({ node }: SideDrawerProps) {
               <button
                 id="drawer-generate-btn"
                 onClick={() => {
-                  generateBranch(node.id, node.data.label);
+                  generateBranch(
+                    node.id,
+                    node.position ?? { x: 400, y: 300 },
+                    node.data.depth ?? 0,
+                    node.data.label
+                  );
                   setSelectedNode(null);
                 }}
                 style={{
