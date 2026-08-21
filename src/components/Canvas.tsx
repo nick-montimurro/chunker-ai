@@ -181,7 +181,7 @@ function CanvasContent() {
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.28 }}
         minZoom={0.05}
         maxZoom={2.5}
         defaultEdgeOptions={{

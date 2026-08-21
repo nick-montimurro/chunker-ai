@@ -3,7 +3,6 @@ import {
   forceManyBody,
   forceCollide,
   forceLink,
-  forceCenter,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from "d3-force";
@@ -16,8 +15,6 @@ export interface SimNode extends SimulationNodeDatum {
   y: number;
   vx?: number;
   vy?: number;
-  width?: number;
-  height?: number;
   data: NodeData;
   isRoot?: boolean;
 }
@@ -27,15 +24,17 @@ export interface SimLink extends SimulationLinkDatum<SimNode> {
   target: string | SimNode;
 }
 
+// Center anchor coordinate for root origin node
+export const ROOT_CENTER = { x: 600, y: 450 };
+
 /**
  * Computes fluid, non-overlapping force-directed coordinates for React Flow nodes.
- * Keeps root near the center, pushes overlapping nodes apart with collision physics,
- * and maintains elastic edge lengths.
+ * Enforces generous clearance between all node cards and maintains clean organic spacing.
  */
 export function applyFluidPhysicsLayout(
   nodes: Node<NodeData>[],
   edges: Edge[],
-  iterations: number = 80
+  iterations: number = 100
 ): Node<NodeData>[] {
   if (nodes.length <= 1) return nodes;
 
@@ -52,37 +51,41 @@ export function applyFluidPhysicsLayout(
     target: e.target,
   }));
 
-  // Force simulation setup
+  // Force simulation setup with robust collision buffers
   const sim = forceSimulation<SimNode>(simNodes)
     .force(
       "charge",
       forceManyBody<SimNode>()
-        .strength((d) => (d.isRoot ? -2500 : -1400))
-        .distanceMax(900)
+        .strength((d) => (d.isRoot ? -4500 : -2200))
+        .distanceMin(180)
+        .distanceMax(1400)
     )
     .force(
       "collide",
       forceCollide<SimNode>()
-        .radius(160) // Node radius with generous clearance (node width ~220px, height ~160px)
-        .iterations(4)
+        .radius(210) // Generous 210px radius ensures 0% card overlap (cards are ~220x150)
+        .iterations(6)
     )
     .force(
       "link",
       forceLink<SimNode, SimLink>(simLinks)
         .id((d) => d.id)
-        .distance(300) // Optimal link distance
-        .strength(0.7)
+        .distance((l) => {
+          const sourceIsRoot = typeof l.source === "object" ? l.source.isRoot : l.source === "root";
+          return sourceIsRoot ? 400 : 340; // Ample link distance between levels
+        })
+        .strength(0.65)
     )
     .stop();
 
-  // Run simulation ticks synchronously for stable layout
+  // Run simulation ticks synchronously for stable organic equilibrium
   for (let i = 0; i < iterations; i++) {
     sim.tick();
     // Keep root pinned to anchor center
     const root = simNodes.find((n) => n.isRoot);
     if (root) {
-      root.x = 520;
-      root.y = 380;
+      root.x = ROOT_CENTER.x;
+      root.y = ROOT_CENTER.y;
     }
   }
 
@@ -101,35 +104,33 @@ export function applyFluidPhysicsLayout(
 
 /**
  * Calculates outward radiating positions for new child branches.
- * Rather than stacking vertically or overlapping ancestors, branches fan outwards
- * along the direction vector from the root through the parent.
+ * Radiates outwards in a wide fan arc in the direction vector away from the root origin.
  */
 export function calculateOutwardBranchPositions(
   parentId: string,
   parentPos: { x: number; y: number },
   count: number,
-  rootPos: { x: number; y: number } = { x: 520, y: 380 }
+  rootPos: { x: number; y: number } = ROOT_CENTER
 ): { x: number; y: number }[] {
-  // Vector from root to parent
   const dx = parentPos.x - rootPos.x;
   const dy = parentPos.y - rootPos.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
 
-  // If parent is at root, distribute evenly in all directions
-  if (dist < 10) {
+  // If parent is the root origin, distribute in a wide circular orbit
+  if (dist < 20) {
     return Array.from({ length: count }).map((_, i) => {
       const angle = (i / count) * 2 * Math.PI - Math.PI / 2;
       return {
-        x: parentPos.x + Math.cos(angle) * 320,
-        y: parentPos.y + Math.sin(angle) * 320,
+        x: rootPos.x + Math.cos(angle) * 420,
+        y: rootPos.y + Math.sin(angle) * 420,
       };
     });
   }
 
-  // Base outward angle from root through parent
+  // Base outward radiating angle from root through the parent node
   const baseAngle = Math.atan2(dy, dx);
-  const branchDistance = 290;
-  const spreadArc = Math.min(Math.PI * 0.75, (count - 1) * 0.45); // Spread angle range
+  const branchDistance = 360; // Generous distance past parent
+  const spreadArc = Math.min(Math.PI * 0.7, (count - 1) * 0.48); // Wide fan spread
 
   return Array.from({ length: count }).map((_, i) => {
     const offsetAngle = count === 1 ? 0 : -spreadArc / 2 + (i / (count - 1)) * spreadArc;

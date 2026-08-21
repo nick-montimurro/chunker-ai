@@ -3,7 +3,11 @@
 import { create } from "zustand";
 import { type Node, type Edge } from "@xyflow/react";
 import { generateSmartChunks, type ChunkPayload, type BranchKind } from "@/lib/semanticChunker";
-import { applyFluidPhysicsLayout, calculateOutwardBranchPositions } from "@/lib/physicsLayout";
+import {
+  applyFluidPhysicsLayout,
+  calculateOutwardBranchPositions,
+  ROOT_CENTER,
+} from "@/lib/physicsLayout";
 
 export type AppMode = "skill-tree" | "arch" | "detective";
 export type AppPhase = "landing" | "canvas";
@@ -95,9 +99,9 @@ export function createInitialGraph(
   mode: AppMode,
   chunks?: ChunkPayload[]
 ): { nodes: Node<NodeData>[]; edges: Edge[] } {
-  const cx = 520;
-  const cy = 380;
-  const radius = 340; // Generous radial clearance
+  const cx = ROOT_CENTER.x;
+  const cy = ROOT_CENTER.y;
+  const radius = 440; // Generous radial clearance around origin node
 
   const validChunks = chunks && chunks.length > 0
     ? chunks
