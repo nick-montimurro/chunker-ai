@@ -2,7 +2,12 @@
 
 import { create } from "zustand";
 import { type Node, type Edge } from "@xyflow/react";
-import { generateSmartChunks, type ChunkPayload, type BranchKind } from "@/lib/semanticChunker";
+import {
+  generateSmartChunks,
+  type ChunkPayload,
+  type BranchKind,
+  type MicroTaskGroup,
+} from "@/lib/semanticChunker";
 import {
   applyFluidPhysicsLayout,
   calculateOutwardBranchPositions,
@@ -11,6 +16,15 @@ import {
 
 export type AppMode = "skill-tree" | "arch" | "detective";
 export type AppPhase = "landing" | "canvas";
+
+export interface SavedMapRecord {
+  topic: string;
+  mode: AppMode;
+  nodes: Node<NodeData>[];
+  edges: Edge[];
+  xp: number;
+  savedAt: string;
+}
 
 export interface NodeData extends Record<string, unknown> {
   label: string;
@@ -24,6 +38,7 @@ export interface NodeData extends Record<string, unknown> {
   keyInsight?: string;
   actionableSteps?: string[];
   completedSteps?: boolean[];
+  microTaskGroups?: MicroTaskGroup[];
   realWorldExample?: string;
   challengeQuestion?: string;
   challengeAnswer?: string;
@@ -36,11 +51,11 @@ export interface NodeData extends Record<string, unknown> {
 interface PendingAddition {
   nodes: Node<NodeData>[];
   edges: Edge[];
-  replaceFullGraph?: boolean; // If true, replaces all node positions with relaxed physics positions
+  replaceFullGraph?: boolean;
 }
 
 interface ChunkerStore {
-  // App phase
+  // App phase & state
   phase: AppPhase;
   masterTopic: string;
 
@@ -52,14 +67,17 @@ interface ChunkerStore {
   thoughtCount: number;
   actionCount: number;
 
-  // Live node positions snapshot for physics calculation
+  // Current graph snapshot
   currentNodes: Node<NodeData>[];
   currentEdges: Edge[];
-
-  // Pending additions
   pendingAddition: PendingAddition | null;
 
-  // UI
+  // Multi-Mode Saved Progress (Pro feature)
+  savedMaps: Record<AppMode, SavedMapRecord | null>;
+  showSaveModal: boolean;
+  pendingTargetMode: AppMode | null;
+
+  // UI state
   currentMode: AppMode;
   selectedNode: Node<NodeData> | null;
   isPro: boolean;
@@ -78,12 +96,17 @@ interface ChunkerStore {
   addXp: (amount: number) => void;
   clearPendingAddition: () => void;
   setMode: (mode: AppMode) => void;
+  requestModeSwitch: (targetMode: AppMode) => void;
+  confirmModeSwitchFresh: () => void;
+  saveCurrentMap: () => boolean;
+  setShowSaveModal: (v: boolean) => void;
   setSelectedNode: (node: Node<NodeData> | null) => void;
   setIsPro: (v: boolean) => void;
   setShowPricing: (v: boolean) => void;
   setShowApiKeyModal: (v: boolean) => void;
   setApiKey: (key: string) => void;
   toggleStepComplete: (nodeId: string, stepIndex: number) => void;
+  toggleGranularStep: (nodeId: string, groupIndex: number, stepIndex: number) => void;
   markNodeMastered: (nodeId: string) => void;
   generateBranch: (
     parentId: string,
@@ -93,7 +116,7 @@ interface ChunkerStore {
   ) => Promise<void>;
 }
 
-// ── Graph Builder with Physics Layout ─────────────────────────────────────────
+// ── Graph Builder with Mode-Specific Spacing ───────────────────────────────────
 export function createInitialGraph(
   topic: string,
   mode: AppMode,
@@ -101,11 +124,21 @@ export function createInitialGraph(
 ): { nodes: Node<NodeData>[]; edges: Edge[] } {
   const cx = ROOT_CENTER.x;
   const cy = ROOT_CENTER.y;
-  const radius = 440; // Generous radial clearance around origin node
+  const radius = 440;
 
   const validChunks = chunks && chunks.length > 0
     ? chunks
     : generateSmartChunks(topic, topic, 0, mode);
+
+  let rootIcon = "🎯";
+  let rootDesc = `Mastery blueprint for "${topic}". Explore 💡 Thought Branches and execute ⚡ Action Missions.`;
+  if (mode === "arch") {
+    rootIcon = "🏗️";
+    rootDesc = `Architecture specification for "${topic}". Ingress routing, core services, and distributed pipelines.`;
+  } else if (mode === "detective") {
+    rootIcon = "🗂️";
+    rootDesc = `Case Dossier for "${topic}". Cross-examine clues, audit evidence, and test forensic hypotheses.`;
+  }
 
   const rootNode: Node<NodeData> = {
     id: "root",
@@ -113,23 +146,23 @@ export function createInitialGraph(
     position: { x: cx, y: cy },
     data: {
       label: topic,
-      description: `Mastery blueprint for "${topic}". Explore the 💡 Thought Branches for mental models, and execute the ⚡ Action Branches for concrete missions.`,
+      description: rootDesc,
       type: "root",
       branchKind: "thought",
       depth: 0,
-      icon: "🎯",
-      whyItMatters: `Mastering ${topic} unlocks high-leverage intellectual capital and elite execution capability.`,
-      keyInsight: `True expertise comes from balancing Deep Understanding (Thought) with Continuous Micro-Execution (Action).`,
+      icon: rootIcon,
+      whyItMatters: `Mastering ${topic} in ${mode.toUpperCase()} mode unlocks systematic execution capability.`,
+      keyInsight: `Break down the problem into structured modules and verify each through action.`,
       actionableSteps: [
-        `Explore the 💡 Thought Branches to build your mental foundation.`,
-        `Execute the ⚡ Action Branches to build muscle memory.`,
-        `Complete all micro-missions to achieve full mastery of ${topic}.`
+        `Review the satellite thought and action branches.`,
+        `Select your first target node to begin.`,
+        `Complete all micro-tasks in the Action Terminal.`
       ],
       completedSteps: [false, false, false],
-      realWorldExample: `Top 1% domain experts systematically deconstruct subjects into conceptual graphs and actionable drills.`,
-      challengeQuestion: `What is the primary breakthrough you are targeting in ${topic}?`,
-      challengeAnswer: `Transitioning from passive theoretical familiarity into verifiable real-world mastery.`,
-      timeEstimate: "Active Journey",
+      realWorldExample: `Leading industry practitioners use structured graph workflows to manage complex projects.`,
+      challengeQuestion: `What is your primary breakthrough goal for ${topic}?`,
+      challengeAnswer: `Building verifiable, production-ready competence from foundational principles.`,
+      timeEstimate: "Active Board",
       xpReward: 100,
       isMastered: false,
     },
@@ -155,10 +188,11 @@ export function createInitialGraph(
         keyInsight: chunk.keyInsight,
         actionableSteps: chunk.actionableSteps || [],
         completedSteps: (chunk.actionableSteps || []).map(() => false),
+        microTaskGroups: chunk.microTaskGroups || [],
         realWorldExample: chunk.realWorldExample,
         challengeQuestion: chunk.challengeQuestion,
         challengeAnswer: chunk.challengeAnswer,
-        timeEstimate: chunk.timeEstimate || (chunk.branchKind === "action" ? "25 min mission" : "15 min concept"),
+        timeEstimate: chunk.timeEstimate || "25 min",
         prerequisites: chunk.prerequisites || [],
         xpReward: chunk.xpReward || (chunk.branchKind === "action" ? 200 : 125),
         isMastered: false,
@@ -173,14 +207,12 @@ export function createInitialGraph(
     animated: true,
     type: "smoothstep",
     style: {
-      stroke: n.data.branchKind === "action" ? "#fbbf24" : "var(--edge-color)",
+      stroke: mode === "detective" ? "#dc2626" : n.data.branchKind === "action" ? "#fbbf24" : "var(--edge-color)",
       strokeWidth: 2,
     },
   }));
 
-  // Run fluid physics relaxation so satellite nodes naturally repel and adjust
   const relaxedNodes = applyFluidPhysicsLayout([rootNode, ...satelliteNodes], rawEdges, 60);
-
   return { nodes: relaxedNodes, edges: rawEdges };
 }
 
@@ -197,6 +229,15 @@ export const useStore = create<ChunkerStore>((set, get) => ({
   currentNodes: [],
   currentEdges: [],
   pendingAddition: null,
+
+  savedMaps: {
+    "skill-tree": null,
+    arch: null,
+    detective: null,
+  },
+  showSaveModal: false,
+  pendingTargetMode: null,
+
   currentMode: "skill-tree",
   selectedNode: null,
   isPro: false,
@@ -276,6 +317,86 @@ export const useStore = create<ChunkerStore>((set, get) => ({
     });
   },
 
+  saveCurrentMap: () => {
+    const { isPro, currentMode, masterTopic, currentNodes, currentEdges, xp, setShowPricing } = get();
+    if (!isPro) {
+      // Prompt Google Play monetization to unlock multi-slot save
+      setShowPricing(true);
+      return false;
+    }
+
+    if (!masterTopic || currentNodes.length === 0) return true;
+
+    const record: SavedMapRecord = {
+      topic: masterTopic,
+      mode: currentMode,
+      nodes: currentNodes,
+      edges: currentEdges,
+      xp,
+      savedAt: new Date().toISOString(),
+    };
+
+    set((s) => ({
+      savedMaps: {
+        ...s.savedMaps,
+        [currentMode]: record,
+      },
+    }));
+
+    return true;
+  },
+
+  requestModeSwitch: (targetMode) => {
+    const { currentMode, masterTopic, currentNodes, isPro, savedMaps, startMastery, setMode } = get();
+    if (currentMode === targetMode) return;
+
+    // If on landing screen or no active map, switch mode directly
+    if (get().phase === "landing" || !masterTopic || currentNodes.length === 0) {
+      setMode(targetMode);
+      return;
+    }
+
+    // If Pro: Auto-save current mode and switch cleanly
+    if (isPro) {
+      get().saveCurrentMap();
+      const existingSaved = savedMaps[targetMode];
+      if (existingSaved) {
+        // Restore saved map for target mode
+        set({
+          currentMode: targetMode,
+          masterTopic: existingSaved.topic,
+          pendingAddition: { nodes: existingSaved.nodes, edges: existingSaved.edges, replaceFullGraph: true },
+          selectedNode: null,
+        });
+      } else {
+        // Start fresh in target mode with same or clean prompt
+        setMode(targetMode);
+        startMastery(masterTopic);
+      }
+      return;
+    }
+
+    // If Free: Show Save / Paywall modal prompting user to either unlock Pro via Google Play or start fresh
+    set({
+      pendingTargetMode: targetMode,
+      showSaveModal: true,
+    });
+  },
+
+  confirmModeSwitchFresh: () => {
+    const { pendingTargetMode, masterTopic, startMastery, setMode } = get();
+    if (!pendingTargetMode) return;
+
+    setMode(pendingTargetMode);
+    set({ showSaveModal: false, pendingTargetMode: null });
+
+    // Start fresh in the newly selected mode with its unique chunking architecture
+    if (masterTopic) {
+      startMastery(masterTopic);
+    }
+  },
+
+  setShowSaveModal: (v) => set({ showSaveModal: v }),
   setNodeCount: (n) => set({ nodeCount: n }),
   setEdgeCount: (n) => set({ edgeCount: n }),
   addXp: (amount) => set((s) => ({ xp: s.xp + amount })),
@@ -319,6 +440,39 @@ export const useStore = create<ChunkerStore>((set, get) => ({
     }));
   },
 
+  toggleGranularStep: (nodeId, groupIndex, stepIndex) => {
+    const { selectedNode } = get();
+    if (!selectedNode || selectedNode.id !== nodeId) return;
+
+    const data = selectedNode.data as NodeData;
+    if (!data.microTaskGroups) return;
+
+    const updatedGroups = JSON.parse(JSON.stringify(data.microTaskGroups)) as MicroTaskGroup[];
+    const targetStep = updatedGroups[groupIndex]?.steps[stepIndex];
+    if (!targetStep) return;
+
+    const wasDone = targetStep.isDone || false;
+    targetStep.isDone = !wasDone;
+
+    // Check if all granular steps in this node are done
+    const allGranularDone = updatedGroups.every((g) => g.steps.every((s) => s.isDone));
+
+    const updatedNode = {
+      ...selectedNode,
+      data: {
+        ...data,
+        microTaskGroups: updatedGroups,
+        isMastered: allGranularDone ? true : data.isMastered,
+      },
+    };
+
+    set((s) => ({
+      selectedNode: updatedNode,
+      xp: wasDone ? s.xp - 25 : s.xp + 25,
+      masteredCount: allGranularDone && !data.isMastered ? s.masteredCount + 1 : s.masteredCount,
+    }));
+  },
+
   markNodeMastered: (nodeId) => {
     const { selectedNode } = get();
     if (!selectedNode || selectedNode.id !== nodeId) return;
@@ -327,12 +481,20 @@ export const useStore = create<ChunkerStore>((set, get) => ({
     const isNowMastered = !data.isMastered;
     const reward = data.xpReward || 200;
 
+    const updatedGroups = data.microTaskGroups
+      ? data.microTaskGroups.map((g) => ({
+          ...g,
+          steps: g.steps.map((s) => ({ ...s, isDone: isNowMastered })),
+        }))
+      : undefined;
+
     const updatedNode = {
       ...selectedNode,
       data: {
         ...data,
         isMastered: isNowMastered,
         completedSteps: isNowMastered ? (data.actionableSteps || []).map(() => true) : data.completedSteps,
+        microTaskGroups: updatedGroups,
       },
     };
 
@@ -379,8 +541,6 @@ export const useStore = create<ChunkerStore>((set, get) => ({
     }
 
     const ts = Date.now();
-
-    // 1. Calculate outward radiating non-overlapping positions
     const branchPositions = calculateOutwardBranchPositions(
       parentId,
       parentPos,
@@ -405,6 +565,7 @@ export const useStore = create<ChunkerStore>((set, get) => ({
           keyInsight: chunk.keyInsight,
           actionableSteps: chunk.actionableSteps || [],
           completedSteps: (chunk.actionableSteps || []).map(() => false),
+          microTaskGroups: chunk.microTaskGroups || [],
           realWorldExample: chunk.realWorldExample,
           challengeQuestion: chunk.challengeQuestion,
           challengeAnswer: chunk.challengeAnswer,
@@ -423,12 +584,11 @@ export const useStore = create<ChunkerStore>((set, get) => ({
       animated: true,
       type: "smoothstep",
       style: {
-        stroke: n.data.branchKind === "action" ? "#fbbf24" : "var(--edge-color)",
+        stroke: currentMode === "detective" ? "#dc2626" : n.data.branchKind === "action" ? "#fbbf24" : "var(--edge-color)",
         strokeWidth: 2,
       },
     }));
 
-    // 2. Run fluid physics relaxation across all combined nodes to prevent any overlaps
     const combinedNodes = [...currentNodes, ...newNodes];
     const combinedEdges = [...currentEdges, ...newEdges];
     const relaxedAllNodes = applyFluidPhysicsLayout(combinedNodes, combinedEdges, 70);
@@ -443,7 +603,7 @@ export const useStore = create<ChunkerStore>((set, get) => ({
         pendingAddition: {
           nodes: relaxedAllNodes,
           edges: combinedEdges,
-          replaceFullGraph: true, // Seamlessly update all positions with relaxed collision-free coordinates
+          replaceFullGraph: true,
         },
         thoughtCount: s.thoughtCount + thoughts,
         actionCount: s.actionCount + actions,

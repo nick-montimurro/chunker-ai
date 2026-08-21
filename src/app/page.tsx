@@ -8,6 +8,7 @@ import SideDrawer from "@/components/layout/SideDrawer";
 import PricingModal from "@/components/PricingModal";
 import LandingScreen from "@/components/LandingScreen";
 import ApiKeyModal from "@/components/ApiKeyModal";
+import SaveModal from "@/components/SaveModal";
 
 /**
  * Canvas uses browser-only APIs (ResizeObserver, DOM measurements).
@@ -77,6 +78,7 @@ export default function HomePage() {
       {/* Modals rendered at root level so they overlay everything */}
       <PricingModal />
       <ApiKeyModal />
+      <SaveModal />
     </AppShell>
   );
 }

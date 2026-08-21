@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useStore, type AppMode } from "@/store/useStore";
 
 const MODES: { id: AppMode; label: string; icon: string }[] = [
-  { id: "skill-tree", label: "Skill Tree", icon: "⚔️" },
+  { id: "skill-tree", label: "Skill Builder", icon: "⚔️" },
   { id: "arch", label: "Architecture", icon: "⚙️" },
   { id: "detective", label: "Detective Board", icon: "🔍" },
 ];
@@ -12,8 +12,8 @@ const MODES: { id: AppMode; label: string; icon: string }[] = [
 export default function TopNav() {
   const {
     currentMode,
-    setMode,
-    nodeCount,
+    requestModeSwitch,
+    saveCurrentMap,
     thoughtCount,
     actionCount,
     masteredCount,
@@ -23,6 +23,16 @@ export default function TopNav() {
     xp,
     masterTopic,
   } = useStore();
+
+  const [savedFeedback, setSavedFeedback] = useState(false);
+
+  const handleSaveClick = () => {
+    const success = saveCurrentMap();
+    if (success) {
+      setSavedFeedback(true);
+      setTimeout(() => setSavedFeedback(false), 1500);
+    }
+  };
 
   return (
     <nav
@@ -82,13 +92,13 @@ export default function TopNav() {
                 lineHeight: 1,
               }}
             >
-              Mastering: {masterTopic.length > 22 ? masterTopic.slice(0, 22) + "…" : masterTopic}
+              Active Blueprint: {masterTopic.length > 20 ? masterTopic.slice(0, 20) + "…" : masterTopic}
             </span>
           )}
         </div>
       </div>
 
-      {/* Mode toggles */}
+      {/* Mode toggles with Save Protection */}
       <div
         style={{
           display: "flex",
@@ -101,7 +111,7 @@ export default function TopNav() {
           <button
             key={m.id}
             id={`nav-mode-${m.id}`}
-            onClick={() => setMode(m.id)}
+            onClick={() => requestModeSwitch(m.id)}
             style={{
               padding: "5px 12px",
               borderRadius: 8,
@@ -128,7 +138,7 @@ export default function TopNav() {
         ))}
       </div>
 
-      {/* Stats + Thought/Action Branches + XP + Pro */}
+      {/* Stats + Save Map CTA + XP + Pro */}
       <div
         style={{
           display: "flex",
@@ -140,15 +150,40 @@ export default function TopNav() {
           letterSpacing: "0.02em",
         }}
       >
-        <span title="Thought Branches (Theory & Mental Models)">
-          💡 <span style={{ color: "var(--accent)", fontWeight: 700 }}>{thoughtCount}</span> Thoughts
+        <span title="Thought Branches (Mental Models)">
+          💡 <span style={{ color: "var(--accent)", fontWeight: 700 }}>{thoughtCount}</span>
         </span>
-        <span title="Action Branches (Hands-on Missions)">
-          ⚡ <span style={{ color: "#fbbf24", fontWeight: 700 }}>{actionCount}</span> Actions
+        <span title="Action Branches (Micro-Missions)">
+          ⚡ <span style={{ color: "#fbbf24", fontWeight: 700 }}>{actionCount}</span>
         </span>
         <span title="Mastered Chunks">
-          🏆 <span style={{ color: "#34d399", fontWeight: 700 }}>{masteredCount}</span> Mastered
+          🏆 <span style={{ color: "#34d399", fontWeight: 700 }}>{masteredCount}</span>
         </span>
+
+        {/* Save Map Button (Google Play Protected) */}
+        <button
+          id="nav-save-map-btn"
+          onClick={handleSaveClick}
+          title={isPro ? "Save current blueprint" : "Save Progress (Google Play Pro)"}
+          style={{
+            padding: "4px 10px",
+            borderRadius: 6,
+            border: `1px solid ${savedFeedback ? "#34d399" : "var(--border-node)"}`,
+            background: savedFeedback ? "rgba(52,211,153,0.15)" : "rgba(255,255,255,0.04)",
+            color: savedFeedback ? "#34d399" : "var(--text-primary)",
+            fontFamily: "var(--font-family)",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            transition: "all 0.2s",
+          }}
+        >
+          <span>{savedFeedback ? "✓" : "💾"}</span>
+          <span>{savedFeedback ? "Saved!" : "Save Map"}</span>
+        </button>
 
         {/* XP Badge */}
         <div

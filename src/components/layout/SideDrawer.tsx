@@ -15,11 +15,14 @@ export default function SideDrawer({ node }: SideDrawerProps) {
     setSelectedNode,
     setShowPricing,
     toggleStepComplete,
+    toggleGranularStep,
     markNodeMastered,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<"action" | "insight" | "quiz">("action");
   const [showAnswer, setShowAnswer] = useState(false);
+  // Track which microtask accordions are open
+  const [expandedGroups, setExpandedGroups] = useState<Record<number, boolean>>({ 0: true });
 
   const isOpen = node !== null;
   if (!isOpen || !node) return null;
@@ -27,9 +30,28 @@ export default function SideDrawer({ node }: SideDrawerProps) {
   const data = node.data as NodeData;
   const isAction = data.branchKind === "action";
   const isMastered = data.isMastered;
-  const completedCount = (data.completedSteps || []).filter(Boolean).length;
-  const totalSteps = data.actionableSteps?.length || 0;
+
+  // Compute total granular progress if available
+  const hasMicroGroups = data.microTaskGroups && data.microTaskGroups.length > 0;
+  let totalGranularSteps = 0;
+  let completedGranularSteps = 0;
+
+  if (hasMicroGroups) {
+    data.microTaskGroups?.forEach((g) => {
+      g.steps.forEach((s) => {
+        totalGranularSteps++;
+        if (s.isDone) completedGranularSteps++;
+      });
+    });
+  }
+
+  const completedCount = hasMicroGroups ? completedGranularSteps : (data.completedSteps || []).filter(Boolean).length;
+  const totalSteps = hasMicroGroups ? totalGranularSteps : data.actionableSteps?.length || 0;
   const progressPct = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : isMastered ? 100 : 0;
+
+  const toggleGroupAccordion = (idx: number) => {
+    setExpandedGroups((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
 
   return (
     <>
@@ -57,7 +79,7 @@ export default function SideDrawer({ node }: SideDrawerProps) {
           top: 0,
           right: 0,
           bottom: 0,
-          width: "min(460px, 94vw)",
+          width: "min(490px, 94vw)",
           background: "var(--bg-node)",
           borderLeft: "1px solid var(--border-node)",
           zIndex: 31,
@@ -65,7 +87,7 @@ export default function SideDrawer({ node }: SideDrawerProps) {
           flexDirection: "column",
           fontFamily: "var(--font-family)",
           color: "var(--text-primary)",
-          boxShadow: "-12px 0 36px rgba(0,0,0,0.6)",
+          boxShadow: "-14px 0 40px rgba(0,0,0,0.7)",
           overflow: "hidden",
         }}
       >
@@ -140,10 +162,12 @@ export default function SideDrawer({ node }: SideDrawerProps) {
           {totalSteps > 0 && (
             <div style={{ marginTop: 4 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginBottom: 3 }}>
-                <span>Action Progress</span>
-                <span style={{ color: "var(--accent)", fontWeight: 700 }}>{progressPct}% Completed</span>
+                <span>Action Checklist Progress</span>
+                <span style={{ color: "var(--accent)", fontWeight: 700 }}>
+                  {completedCount}/{totalSteps} Steps ({progressPct}%)
+                </span>
               </div>
-              <div style={{ height: 5, borderRadius: 99, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+              <div style={{ height: 6, borderRadius: 99, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
                 <div
                   style={{
                     height: "100%",
@@ -214,13 +238,162 @@ export default function SideDrawer({ node }: SideDrawerProps) {
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
           {activeTab === "action" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent)" }}>
-                Next Actionable Micro-Tasks (+50 XP each)
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent)" }}>
+                  Step-by-Step Micro-Task Breakdown
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  +25 to 50 XP per step
+                </div>
               </div>
 
-              {data.actionableSteps && data.actionableSteps.length > 0 ? (
+              {/* ── Dropdown / Accordion Micro-Task Groups ── */}
+              {hasMicroGroups ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {data.microTaskGroups?.map((group, gIdx) => {
+                    const isExpanded = expandedGroups[gIdx] ?? true;
+                    const groupDoneCount = group.steps.filter((s) => s.isDone).length;
+                    const isGroupDone = group.steps.length > 0 && groupDoneCount === group.steps.length;
+
+                    return (
+                      <div
+                        key={group.id || gIdx}
+                        style={{
+                          border: `1px solid ${isGroupDone ? "var(--accent)" : "var(--border-node)"}`,
+                          borderRadius: 10,
+                          background: isGroupDone ? "rgba(74,222,128,0.06)" : "rgba(0,0,0,0.25)",
+                          overflow: "hidden",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        {/* Accordion Header / Dropdown Toggle */}
+                        <div
+                          onClick={() => toggleGroupAccordion(gIdx)}
+                          style={{
+                            padding: "10px 14px",
+                            background: "rgba(255,255,255,0.03)",
+                            borderBottom: isExpanded ? "1px solid var(--border-node)44" : "none",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            userSelect: "none",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 12, transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+                              ▶
+                            </span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: isGroupDone ? "var(--accent)" : "var(--text-primary)" }}>
+                              {group.title}
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: 10, color: "var(--text-muted)", padding: "1px 6px", borderRadius: 99, background: "rgba(0,0,0,0.3)" }}>
+                              {groupDoneCount}/{group.steps.length} Done
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Accordion Body: Manageable Sub-Steps */}
+                        {isExpanded && (
+                          <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+                            {group.overview && (
+                              <p style={{ margin: "0 0 6px", fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                                {group.overview}
+                              </p>
+                            )}
+
+                            {group.steps.map((step, sIdx) => (
+                              <div
+                                key={step.id || sIdx}
+                                style={{
+                                  padding: "10px 12px",
+                                  borderRadius: 8,
+                                  border: `1px solid ${step.isDone ? "var(--accent)" : "rgba(255,255,255,0.08)"}`,
+                                  background: step.isDone ? "rgba(74,222,128,0.08)" : "rgba(255,255,255,0.02)",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 6,
+                                }}
+                              >
+                                <div
+                                  onClick={() => toggleGranularStep(node.id, gIdx, sIdx)}
+                                  style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}
+                                >
+                                  <div
+                                    style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 4,
+                                      border: `2px solid ${step.isDone ? "var(--accent)" : "var(--text-muted)"}`,
+                                      background: step.isDone ? "var(--accent)" : "transparent",
+                                      color: "var(--bg-canvas)",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: 11,
+                                      fontWeight: 900,
+                                      flexShrink: 0,
+                                      marginTop: 1,
+                                    }}
+                                  >
+                                    {step.isDone ? "✓" : ""}
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: step.isDone ? "var(--text-muted)" : "var(--text-primary)", textDecoration: step.isDone ? "line-through" : "none" }}>
+                                      {step.title}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.45, marginTop: 2 }}>
+                                      {step.detail}
+                                    </div>
+                                  </div>
+                                  {step.timeEstimate && (
+                                    <span style={{ fontSize: 9, color: "var(--accent)", fontWeight: 700, flexShrink: 0 }}>
+                                      ⏱ {step.timeEstimate}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Concrete Command / Code Snippet */}
+                                {step.commandSnippet && (
+                                  <div
+                                    style={{
+                                      padding: "6px 10px",
+                                      borderRadius: 6,
+                                      background: "rgba(0,0,0,0.5)",
+                                      border: "1px solid rgba(255,255,255,0.06)",
+                                      fontFamily: "monospace",
+                                      fontSize: 10,
+                                      color: "#86efac",
+                                      overflowX: "auto",
+                                      whiteSpace: "pre-wrap",
+                                      wordBreak: "break-all",
+                                    }}
+                                  >
+                                    $ {step.commandSnippet}
+                                  </div>
+                                )}
+
+                                {/* Verification Outcome */}
+                                {step.verificationOutcome && (
+                                  <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                                    <span style={{ color: "var(--accent)" }}>✓ Verification:</span>
+                                    <span>{step.verificationOutcome}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Fallback single-level tasks */
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {data.actionableSteps.map((step, idx) => {
+                  {data.actionableSteps?.map((step, idx) => {
                     const isDone = data.completedSteps?.[idx] || false;
                     return (
                       <div
@@ -257,24 +430,13 @@ export default function SideDrawer({ node }: SideDrawerProps) {
                         >
                           {isDone ? "✓" : ""}
                         </div>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            lineHeight: 1.45,
-                            color: isDone ? "var(--text-muted)" : "var(--text-primary)",
-                            textDecoration: isDone ? "line-through" : "none",
-                          }}
-                        >
+                        <div style={{ fontSize: 12, lineHeight: 1.45, color: isDone ? "var(--text-muted)" : "var(--text-primary)", textDecoration: isDone ? "line-through" : "none" }}>
                           {step}
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              ) : (
-                <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  No micro-steps generated. Click &quot;Generate Deeper Branches&quot; below to break this down further.
-                </p>
               )}
 
               {data.realWorldExample && (
@@ -465,7 +627,7 @@ export default function SideDrawer({ node }: SideDrawerProps) {
                 gap: 4,
               }}
             >
-              <span>⚡ Pro Upgrade</span>
+              <span>⚡ Pro Save & Multi-Mode</span>
             </button>
 
             <button
