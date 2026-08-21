@@ -2,40 +2,44 @@
 
 import React from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { useStore, type NodeData } from "@/store/useStore";
+import { type NodeData } from "@/store/useStore";
 
-export default function SkillNode({ data, selected, id }: NodeProps & { data: NodeData }) {
-  const { generateBranch } = useStore();
+export default function SkillNode({ data, selected }: NodeProps & { data: NodeData }) {
+  const isAction = data.branchKind === "action";
+  const isMastered = data.isMastered;
+  const isRoot = data.type === "root";
 
-  const icons: Record<string, string> = { root: "✦", concept: "◈", branch: "◆", leaf: "◇" };
+  const borderColor = isMastered
+    ? "#fbbf24"
+    : selected
+    ? "var(--accent)"
+    : isAction
+    ? "#fbbf24"
+    : "var(--border-node)";
 
   return (
     <div
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        // Pass position via the DOM — React Flow injects position as style transform
-        const el = e.currentTarget.closest(".react-flow__node") as HTMLElement | null;
-        // We can't easily read position here; generateBranch is called by Canvas onNodeDoubleClick instead
-        // This handler is a fallback only
-        void id;
-      }}
       style={{
         background: "var(--bg-node)",
-        border: `2px solid ${selected ? "var(--accent)" : "var(--border-node)"}`,
+        border: `2px solid ${borderColor}`,
         borderRadius: "var(--node-radius, 12px)",
         fontFamily: "var(--font-family)",
         color: "var(--text-primary)",
-        boxShadow: selected
+        boxShadow: isMastered
+          ? "0 0 0 3px rgba(251,191,36,0.5), 0 0 25px rgba(251,191,36,0.3)"
+          : selected
           ? "0 0 0 3px var(--accent), 0 0 24px var(--glow-color)"
+          : isAction
+          ? "0 0 16px rgba(251,191,36,0.25)"
           : "0 0 14px var(--glow-color), inset 0 1px 0 rgba(255,255,255,0.05)",
         transition: "all 0.25s ease",
-        minWidth: 164,
-        maxWidth: 224,
+        minWidth: 175,
+        maxWidth: 240,
         position: "relative",
         cursor: "pointer",
         userSelect: "none",
       }}
-      title="Double-click to branch · Single-click to inspect"
+      title="Click to inspect in Mastery Terminal · Double-click to expand"
     >
       {data.isGenerating && (
         <div
@@ -51,38 +55,41 @@ export default function SkillNode({ data, selected, id }: NodeProps & { data: No
         />
       )}
 
-      {/* Header stripe */}
+      {/* Header stripe with branch kind badge */}
       <div
         style={{
-          background:
-            data.type === "root"
-              ? "linear-gradient(135deg, var(--accent) 0%, var(--border-node) 100%)"
-              : "linear-gradient(135deg, var(--border-node) 0%, transparent 100%)",
-          padding: "6px 12px",
+          background: isMastered
+            ? "linear-gradient(135deg, #fbbf24 0%, #d97706 100%)"
+            : isRoot
+            ? "linear-gradient(135deg, var(--accent) 0%, var(--border-node) 100%)"
+            : isAction
+            ? "linear-gradient(135deg, rgba(251,191,36,0.3) 0%, rgba(217,119,6,0.1) 100%)"
+            : "linear-gradient(135deg, var(--border-node)22 0%, transparent 100%)",
+          padding: "6px 10px",
           borderRadius: "calc(var(--node-radius, 12px) - 2px) calc(var(--node-radius, 12px) - 2px) 0 0",
           display: "flex",
           alignItems: "center",
           gap: 6,
+          borderBottom: `1px solid ${isAction ? "rgba(251,191,36,0.3)" : "var(--border-node)33"}`,
         }}
       >
-        <span style={{ fontSize: 14 }}>{icons[data.type] ?? "◆"}</span>
+        <span style={{ fontSize: 14 }}>{data.icon || (isAction ? "⚡" : "💡")}</span>
         <span
           style={{
             fontSize: 9,
-            fontWeight: 700,
-            letterSpacing: "0.1em",
+            fontWeight: 800,
+            letterSpacing: "0.08em",
             textTransform: "uppercase",
-            color: data.type === "root" ? "var(--bg-canvas)" : "var(--text-primary)",
-            opacity: 0.9,
+            color: isMastered ? "#0d1117" : isAction ? "#fbbf24" : "var(--accent)",
           }}
         >
-          {data.type === "root" ? "Origin Node" : data.type}
+          {isMastered ? "✓ MASTERED" : isRoot ? "ORIGIN TOPIC" : isAction ? "ACTION MISSION" : "THOUGHT CHUNK"}
         </span>
         {(data.depth ?? 0) > 0 && (
           <span
             style={{
               marginLeft: "auto",
-              background: "var(--accent)",
+              background: isAction ? "#fbbf24" : "var(--accent)",
               color: "var(--bg-canvas)",
               fontSize: 8,
               fontWeight: 800,
@@ -90,22 +97,44 @@ export default function SkillNode({ data, selected, id }: NodeProps & { data: No
               borderRadius: 99,
             }}
           >
-            LV {data.depth}
+            L{data.depth}
           </span>
         )}
       </div>
 
+      {/* Body */}
       <div style={{ padding: "10px 12px 12px" }}>
-        <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3, marginBottom: 5, color: "var(--text-primary)" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3, marginBottom: 5, color: "var(--text-primary)" }}>
           {data.label}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.45 }}>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.45, marginBottom: 8 }}>
           {data.description}
         </div>
+
+        {/* Step progress pills if action */}
+        {isAction && data.actionableSteps && data.actionableSteps.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
+            {data.actionableSteps.map((_, idx) => {
+              const done = data.completedSteps?.[idx];
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    flex: 1,
+                    height: 4,
+                    borderRadius: 2,
+                    background: done ? "#fbbf24" : "rgba(255,255,255,0.15)",
+                    transition: "background 0.2s ease",
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <Handle type="target" position={Position.Top} style={{ background: "var(--accent)", border: "2px solid var(--bg-node)", width: 10, height: 10 }} />
-      <Handle type="source" position={Position.Bottom} style={{ background: "var(--border-node)", border: "2px solid var(--bg-node)", width: 10, height: 10 }} />
+      <Handle type="source" position={Position.Bottom} style={{ background: isAction ? "#fbbf24" : "var(--border-node)", border: "2px solid var(--bg-node)", width: 10, height: 10 }} />
     </div>
   );
 }

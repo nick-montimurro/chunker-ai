@@ -10,8 +10,19 @@ const MODES: { id: AppMode; label: string; icon: string }[] = [
 ];
 
 export default function TopNav() {
-  const { currentMode, setMode, nodeCount, edgeCount, isPro, setShowPricing, xp, masterTopic } =
-    useStore();
+  const {
+    currentMode,
+    setMode,
+    nodeCount,
+    thoughtCount,
+    actionCount,
+    masteredCount,
+    isPro,
+    setShowPricing,
+    setShowApiKeyModal,
+    xp,
+    masterTopic,
+  } = useStore();
 
   return (
     <nav
@@ -65,7 +76,7 @@ export default function TopNav() {
               style={{
                 fontSize: 9,
                 color: "var(--accent)",
-                fontWeight: 600,
+                fontWeight: 700,
                 letterSpacing: "0.04em",
                 textTransform: "uppercase",
                 lineHeight: 1,
@@ -117,23 +128,26 @@ export default function TopNav() {
         ))}
       </div>
 
-      {/* Stats + XP + Pro */}
+      {/* Stats + Thought/Action Branches + XP + Pro */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 12,
+          gap: 10,
           flexShrink: 0,
           fontSize: 11,
           color: "var(--text-muted)",
-          letterSpacing: "0.04em",
+          letterSpacing: "0.02em",
         }}
       >
-        <span>
-          <span style={{ color: "var(--accent)", fontWeight: 700 }}>{nodeCount}</span> nodes
+        <span title="Thought Branches (Theory & Mental Models)">
+          💡 <span style={{ color: "var(--accent)", fontWeight: 700 }}>{thoughtCount}</span> Thoughts
         </span>
-        <span>
-          <span style={{ color: "var(--border-node)", fontWeight: 700 }}>{edgeCount}</span> edges
+        <span title="Action Branches (Hands-on Missions)">
+          ⚡ <span style={{ color: "#fbbf24", fontWeight: 700 }}>{actionCount}</span> Actions
+        </span>
+        <span title="Mastered Chunks">
+          🏆 <span style={{ color: "#34d399", fontWeight: 700 }}>{masteredCount}</span> Mastered
         </span>
 
         {/* XP Badge */}
@@ -141,44 +155,36 @@ export default function TopNav() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 5,
+            gap: 4,
             padding: "3px 10px",
             background: "rgba(74,222,128,0.08)",
             border: "1px solid var(--accent)",
             borderRadius: 99,
             color: "var(--accent)",
-            fontWeight: 700,
+            fontWeight: 800,
             fontSize: 11,
           }}
         >
           ⚡ {xp} XP
         </div>
 
-        {/* Live indicator */}
-        <span
+        {/* AI Brain config button */}
+        <button
+          id="nav-ai-brain-btn"
+          onClick={() => setShowApiKeyModal(true)}
+          title="Configure Gemini AI Cognitive Brain"
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            padding: "2px 8px",
-            background: "rgba(74,222,128,0.1)",
-            border: "1px solid var(--border-node)",
-            borderRadius: 99,
-            color: "var(--border-node)",
-            fontWeight: 600,
+            padding: "4px 8px",
+            borderRadius: 8,
+            border: "1px solid var(--border-node)44",
+            background: "rgba(255,255,255,0.04)",
+            color: "var(--text-primary)",
+            fontSize: 13,
+            cursor: "pointer",
           }}
         >
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: "var(--border-node)",
-              animation: "pulse-ring 1.4s ease-in-out infinite",
-            }}
-          />
-          Live
-        </span>
+          🧠
+        </button>
 
         {!isPro && (
           <button

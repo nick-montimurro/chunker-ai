@@ -7,6 +7,7 @@ import TopNav from "@/components/layout/TopNav";
 import SideDrawer from "@/components/layout/SideDrawer";
 import PricingModal from "@/components/PricingModal";
 import LandingScreen from "@/components/LandingScreen";
+import ApiKeyModal from "@/components/ApiKeyModal";
 
 /**
  * Canvas uses browser-only APIs (ResizeObserver, DOM measurements).
@@ -73,8 +74,9 @@ export default function HomePage() {
           </main>
         </>
       )}
-      {/* Pricing modal rendered at root level so it overlays everything */}
+      {/* Modals rendered at root level so they overlay everything */}
       <PricingModal />
+      <ApiKeyModal />
     </AppShell>
   );
 }

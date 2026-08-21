@@ -18,7 +18,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { useStore, generateInitialNodes, type NodeData, type AppMode } from "@/store/useStore";
+import { useStore, createInitialGraph, type NodeData, type AppMode } from "@/store/useStore";
 import { nodeTypes } from "@/lib/nodeTypes";
 
 const BG_VARIANT: Record<AppMode, BackgroundVariant> = {
@@ -49,6 +49,7 @@ export default function Canvas() {
     pendingAddition,
     clearPendingAddition,
     generatingIds,
+    selectedNode,
     setSelectedNode,
     setNodeCount,
     setEdgeCount,
@@ -57,8 +58,7 @@ export default function Canvas() {
     resetToLanding,
   } = useStore();
 
-  // Build initial graph from the mastery topic
-  const initialGraph = generateInitialNodes(masterTopic, currentMode);
+  const initialGraph = useRef(createInitialGraph(masterTopic, currentMode)).current;
   const [nodes, setLocalNodes, onNodesChange] = useNodesState<Node<NodeData>>(initialGraph.nodes);
   const [edges, setLocalEdges, onEdgesChange] = useEdgesState<Edge>(initialGraph.edges);
   const [xpToasts, setXpToasts] = useState<XpToast[]>([]);
@@ -71,7 +71,6 @@ export default function Canvas() {
     setLocalEdges((prev) => [...prev, ...pendingAddition.edges]);
     clearPendingAddition();
 
-    // XP toast
     const id = ++toastCounter.current;
     setXpToasts((t) => [...t, { id, amount: 150 }]);
     setTimeout(() => setXpToasts((t) => t.filter((x) => x.id !== id)), 2000);
@@ -86,6 +85,14 @@ export default function Canvas() {
       }))
     );
   }, [generatingIds, setLocalNodes]);
+
+  // ── Sync mastered state from selectedNode back to local node list ──────────
+  useEffect(() => {
+    if (!selectedNode) return;
+    setLocalNodes((prev) =>
+      prev.map((n) => (n.id === selectedNode.id ? (selectedNode as Node<NodeData>) : n))
+    );
+  }, [selectedNode, setLocalNodes]);
 
   // ── Report counts (debounced) ──────────────────────────────────────────────
   const statsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -184,28 +191,38 @@ export default function Canvas() {
         />
       </ReactFlow>
 
-      {/* Hint bar */}
+      {/* Mastery Legend bar */}
       <div
         style={{
           position: "absolute",
           bottom: 20,
           left: "50%",
           transform: "translateX(-50%)",
-          background: "rgba(0,0,0,0.65)",
-          backdropFilter: "blur(10px)",
+          background: "rgba(0,0,0,0.75)",
+          backdropFilter: "blur(12px)",
           border: "1px solid var(--border-node)",
-          borderRadius: 10,
-          padding: "8px 18px",
+          borderRadius: 12,
+          padding: "8px 20px",
           fontSize: 11,
           color: "var(--text-muted)",
-          pointerEvents: "none",
-          textAlign: "center",
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
           whiteSpace: "nowrap",
           fontFamily: "var(--font-family)",
           boxShadow: "0 0 20px var(--glow-color)",
+          zIndex: 10,
         }}
       >
-        ✦ Double-click to branch · Single-click to inspect · Drag to explore
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span>💡</span> <strong style={{ color: "var(--accent)" }}>Thought Branches</strong>: Mental Models
+        </span>
+        <span style={{ opacity: 0.4 }}>|</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span>⚡</span> <strong style={{ color: "#fbbf24" }}>Action Branches</strong>: Micro-Missions
+        </span>
+        <span style={{ opacity: 0.4 }}>|</span>
+        <span style={{ color: "var(--text-primary)" }}>Click node to inspect & execute</span>
       </div>
 
       {/* Back button */}
