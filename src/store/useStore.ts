@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { type Node, type Edge } from "@xyflow/react";
 import { generateSmartChunks, type ChunkPayload, type BranchKind } from "@/lib/semanticChunker";
+import { applyFluidPhysicsLayout, calculateOutwardBranchPositions } from "@/lib/physicsLayout";
 
 export type AppMode = "skill-tree" | "arch" | "detective";
 export type AppPhase = "landing" | "canvas";
@@ -11,11 +12,10 @@ export interface NodeData extends Record<string, unknown> {
   label: string;
   description: string;
   type: "root" | "concept" | "branch" | "leaf";
-  branchKind?: BranchKind; // "thought" vs "action"
+  branchKind?: BranchKind;
   isGenerating?: boolean;
   depth?: number;
   icon?: string;
-  // Learning & Mastery fields
   whyItMatters?: string;
   keyInsight?: string;
   actionableSteps?: string[];
@@ -32,6 +32,7 @@ export interface NodeData extends Record<string, unknown> {
 interface PendingAddition {
   nodes: Node<NodeData>[];
   edges: Edge[];
+  replaceFullGraph?: boolean; // If true, replaces all node positions with relaxed physics positions
 }
 
 interface ChunkerStore {
@@ -46,6 +47,10 @@ interface ChunkerStore {
   masteredCount: number;
   thoughtCount: number;
   actionCount: number;
+
+  // Live node positions snapshot for physics calculation
+  currentNodes: Node<NodeData>[];
+  currentEdges: Edge[];
 
   // Pending additions
   pendingAddition: PendingAddition | null;
@@ -63,6 +68,7 @@ interface ChunkerStore {
   // Actions
   startMastery: (topic: string) => Promise<void>;
   resetToLanding: () => void;
+  updateGraphSnapshot: (nodes: Node<NodeData>[], edges: Edge[]) => void;
   setNodeCount: (n: number) => void;
   setEdgeCount: (n: number) => void;
   addXp: (amount: number) => void;
@@ -83,7 +89,7 @@ interface ChunkerStore {
   ) => Promise<void>;
 }
 
-// ── Graph Builder ────────────────────────────────────────────────────────────
+// ── Graph Builder with Physics Layout ─────────────────────────────────────────
 export function createInitialGraph(
   topic: string,
   mode: AppMode,
@@ -91,7 +97,7 @@ export function createInitialGraph(
 ): { nodes: Node<NodeData>[]; edges: Edge[] } {
   const cx = 520;
   const cy = 380;
-  const radius = 250;
+  const radius = 340; // Generous radial clearance
 
   const validChunks = chunks && chunks.length > 0
     ? chunks
@@ -156,7 +162,7 @@ export function createInitialGraph(
     };
   });
 
-  const edges: Edge[] = satelliteNodes.map((n) => ({
+  const rawEdges: Edge[] = satelliteNodes.map((n) => ({
     id: `e-root-${n.id}`,
     source: "root",
     target: n.id,
@@ -168,7 +174,10 @@ export function createInitialGraph(
     },
   }));
 
-  return { nodes: [rootNode, ...satelliteNodes], edges };
+  // Run fluid physics relaxation so satellite nodes naturally repel and adjust
+  const relaxedNodes = applyFluidPhysicsLayout([rootNode, ...satelliteNodes], rawEdges, 60);
+
+  return { nodes: relaxedNodes, edges: rawEdges };
 }
 
 // ── Store ────────────────────────────────────────────────────────────────────
@@ -181,6 +190,8 @@ export const useStore = create<ChunkerStore>((set, get) => ({
   masteredCount: 0,
   thoughtCount: 0,
   actionCount: 0,
+  currentNodes: [],
+  currentEdges: [],
   pendingAddition: null,
   currentMode: "skill-tree",
   selectedNode: null,
@@ -190,6 +201,10 @@ export const useStore = create<ChunkerStore>((set, get) => ({
   apiKey: typeof window !== "undefined" ? localStorage.getItem("chunker_api_key") || "" : "",
   generatingIds: new Set(),
   isLoadingInitial: false,
+
+  updateGraphSnapshot: (nodes, edges) => {
+    set({ currentNodes: nodes, currentEdges: edges });
+  },
 
   startMastery: async (topic: string) => {
     const trimmed = topic.trim();
@@ -216,7 +231,7 @@ export const useStore = create<ChunkerStore>((set, get) => ({
           const thoughts = initial.nodes.filter((n) => n.data.branchKind === "thought").length;
           const actions = initial.nodes.filter((n) => n.data.branchKind === "action").length;
           set({
-            pendingAddition: { nodes: initial.nodes, edges: initial.edges },
+            pendingAddition: { nodes: initial.nodes, edges: initial.edges, replaceFullGraph: true },
             isLoadingInitial: false,
             thoughtCount: thoughts,
             actionCount: actions,
@@ -233,7 +248,7 @@ export const useStore = create<ChunkerStore>((set, get) => ({
     const thoughts = initial.nodes.filter((n) => n.data.branchKind === "thought").length;
     const actions = initial.nodes.filter((n) => n.data.branchKind === "action").length;
     set({
-      pendingAddition: { nodes: initial.nodes, edges: initial.edges },
+      pendingAddition: { nodes: initial.nodes, edges: initial.edges, replaceFullGraph: true },
       isLoadingInitial: false,
       thoughtCount: thoughts,
       actionCount: actions,
@@ -247,6 +262,8 @@ export const useStore = create<ChunkerStore>((set, get) => ({
       masterTopic: "",
       nodeCount: 0,
       edgeCount: 0,
+      currentNodes: [],
+      currentEdges: [],
       pendingAddition: null,
       generatingIds: new Set(),
       selectedNode: null,
@@ -327,7 +344,7 @@ export const useStore = create<ChunkerStore>((set, get) => ({
       generatingIds: new Set([...s.generatingIds, parentId]),
     }));
 
-    const { currentMode, masterTopic, apiKey } = get();
+    const { currentMode, masterTopic, apiKey, currentNodes, currentEdges } = get();
     let chunks: ChunkPayload[] = [];
 
     try {
@@ -358,17 +375,20 @@ export const useStore = create<ChunkerStore>((set, get) => ({
     }
 
     const ts = Date.now();
-    const SPREAD = 230;
+
+    // 1. Calculate outward radiating non-overlapping positions
+    const branchPositions = calculateOutwardBranchPositions(
+      parentId,
+      parentPos,
+      chunks.length
+    );
 
     const newNodes: Node<NodeData>[] = chunks.map((chunk, i) => {
-      const offset = i - (chunks.length - 1) / 2;
+      const pos = branchPositions[i] || { x: parentPos.x + (i - 1) * 260, y: parentPos.y + 240 };
       return {
         id: `${parentId}-br-${ts}-${i}`,
         type: "skill",
-        position: {
-          x: parentPos.x + offset * SPREAD,
-          y: parentPos.y + 190,
-        },
+        position: pos,
         data: {
           label: chunk.label,
           description: chunk.description,
@@ -404,6 +424,11 @@ export const useStore = create<ChunkerStore>((set, get) => ({
       },
     }));
 
+    // 2. Run fluid physics relaxation across all combined nodes to prevent any overlaps
+    const combinedNodes = [...currentNodes, ...newNodes];
+    const combinedEdges = [...currentEdges, ...newEdges];
+    const relaxedAllNodes = applyFluidPhysicsLayout(combinedNodes, combinedEdges, 70);
+
     set((s) => {
       const ids = new Set(s.generatingIds);
       ids.delete(parentId);
@@ -411,7 +436,11 @@ export const useStore = create<ChunkerStore>((set, get) => ({
       const actions = newNodes.filter((n) => n.data.branchKind === "action").length;
       return {
         generatingIds: ids,
-        pendingAddition: { nodes: newNodes, edges: newEdges },
+        pendingAddition: {
+          nodes: relaxedAllNodes,
+          edges: combinedEdges,
+          replaceFullGraph: true, // Seamlessly update all positions with relaxed collision-free coordinates
+        },
         thoughtCount: s.thoughtCount + thoughts,
         actionCount: s.actionCount + actions,
         xp: s.xp + 150,

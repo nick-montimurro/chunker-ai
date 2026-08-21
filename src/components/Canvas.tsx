@@ -9,6 +9,8 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   type Node,
   type Edge,
   type OnNodesChange,
@@ -19,6 +21,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { useStore, createInitialGraph, type NodeData, type AppMode } from "@/store/useStore";
+import { applyFluidPhysicsLayout } from "@/lib/physicsLayout";
 import { nodeTypes } from "@/lib/nodeTypes";
 
 const BG_VARIANT: Record<AppMode, BackgroundVariant> = {
@@ -42,7 +45,7 @@ interface XpToast {
   amount: number;
 }
 
-export default function Canvas() {
+function CanvasContent() {
   const {
     currentMode,
     masterTopic,
@@ -53,10 +56,13 @@ export default function Canvas() {
     setSelectedNode,
     setNodeCount,
     setEdgeCount,
+    updateGraphSnapshot,
     generateBranch,
     addXp,
     resetToLanding,
   } = useStore();
+
+  const { fitView } = useReactFlow();
 
   const initialGraph = useRef(createInitialGraph(masterTopic, currentMode)).current;
   const [nodes, setLocalNodes, onNodesChange] = useNodesState<Node<NodeData>>(initialGraph.nodes);
@@ -64,17 +70,28 @@ export default function Canvas() {
   const [xpToasts, setXpToasts] = useState<XpToast[]>([]);
   const toastCounter = useRef(0);
 
-  // ── Consume pending additions ──────────────────────────────────────────────
+  // ── Consume pending additions (supports full-graph physics relaxation) ─────
   useEffect(() => {
     if (!pendingAddition) return;
-    setLocalNodes((prev) => [...prev, ...(pendingAddition.nodes as Node<NodeData>[])]);
-    setLocalEdges((prev) => [...prev, ...pendingAddition.edges]);
+
+    if (pendingAddition.replaceFullGraph) {
+      setLocalNodes(pendingAddition.nodes as Node<NodeData>[]);
+      setLocalEdges(pendingAddition.edges);
+    } else {
+      setLocalNodes((prev) => [...prev, ...(pendingAddition.nodes as Node<NodeData>[])]);
+      setLocalEdges((prev) => [...prev, ...pendingAddition.edges]);
+    }
     clearPendingAddition();
 
     const id = ++toastCounter.current;
     setXpToasts((t) => [...t, { id, amount: 150 }]);
     setTimeout(() => setXpToasts((t) => t.filter((x) => x.id !== id)), 2000);
-  }, [pendingAddition, setLocalNodes, setLocalEdges, clearPendingAddition]);
+
+    // Gently auto-frame the expanding graph without sudden jumping
+    setTimeout(() => {
+      fitView({ duration: 600, padding: 0.22 });
+    }, 150);
+  }, [pendingAddition, setLocalNodes, setLocalEdges, clearPendingAddition, fitView]);
 
   // ── Sync generating state ──────────────────────────────────────────────────
   useEffect(() => {
@@ -94,16 +111,24 @@ export default function Canvas() {
     );
   }, [selectedNode, setLocalNodes]);
 
-  // ── Report counts (debounced) ──────────────────────────────────────────────
-  const statsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── Keep store updated with current positions for next physics simulation ──
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (statsTimer.current) clearTimeout(statsTimer.current);
-    statsTimer.current = setTimeout(() => {
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => {
+      updateGraphSnapshot(nodes, edges);
       setNodeCount(nodes.length);
       setEdgeCount(edges.length);
-    }, 200);
+    }, 150);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes.length, edges.length]);
+  }, [nodes, edges]);
+
+  // ── Manual Organic Relaxation ──────────────────────────────────────────────
+  const handleRelaxPhysics = useCallback(() => {
+    const relaxed = applyFluidPhysicsLayout(nodes, edges, 90);
+    setLocalNodes(relaxed);
+    setTimeout(() => fitView({ duration: 500, padding: 0.22 }), 100);
+  }, [nodes, edges, setLocalNodes, fitView]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleNodesChange: OnNodesChange<Node<NodeData>> = useCallback(
@@ -156,7 +181,7 @@ export default function Canvas() {
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.18 }}
+        fitViewOptions={{ padding: 0.2 }}
         minZoom={0.05}
         maxZoom={2.5}
         defaultEdgeOptions={{
@@ -191,26 +216,26 @@ export default function Canvas() {
         />
       </ReactFlow>
 
-      {/* Mastery Legend bar */}
+      {/* Mastery Legend & Fluid Physics Tools */}
       <div
         style={{
           position: "absolute",
           bottom: 20,
           left: "50%",
           transform: "translateX(-50%)",
-          background: "rgba(0,0,0,0.75)",
+          background: "rgba(0,0,0,0.8)",
           backdropFilter: "blur(12px)",
           border: "1px solid var(--border-node)",
           borderRadius: 12,
-          padding: "8px 20px",
+          padding: "8px 18px",
           fontSize: 11,
           color: "var(--text-muted)",
           display: "flex",
           alignItems: "center",
-          gap: 16,
+          gap: 14,
           whiteSpace: "nowrap",
           fontFamily: "var(--font-family)",
-          boxShadow: "0 0 20px var(--glow-color)",
+          boxShadow: "0 0 24px var(--glow-color)",
           zIndex: 10,
         }}
       >
@@ -222,7 +247,28 @@ export default function Canvas() {
           <span>⚡</span> <strong style={{ color: "#fbbf24" }}>Action Branches</strong>: Micro-Missions
         </span>
         <span style={{ opacity: 0.4 }}>|</span>
-        <span style={{ color: "var(--text-primary)" }}>Click node to inspect & execute</span>
+        <button
+          id="relax-physics-btn"
+          onClick={handleRelaxPhysics}
+          title="Auto-arrange nodes to prevent overlaps with fluid physics"
+          style={{
+            padding: "4px 10px",
+            borderRadius: 6,
+            border: "1px solid var(--accent)",
+            background: "linear-gradient(135deg, var(--accent)22 0%, transparent 100%)",
+            color: "var(--accent)",
+            fontFamily: "var(--font-family)",
+            fontSize: 10,
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <span>🫧</span>
+          <span>Fluid Relax</span>
+        </button>
       </div>
 
       {/* Back button */}
@@ -283,5 +329,13 @@ export default function Canvas() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function Canvas() {
+  return (
+    <ReactFlowProvider>
+      <CanvasContent />
+    </ReactFlowProvider>
   );
 }
