@@ -26,7 +26,7 @@ const EXAMPLES = [
 ];
 
 export default function LandingScreen() {
-  const { currentMode, setMode, startMastery } = useStore();
+  const { currentMode, setMode, startMastery, setShowPricing, isPro } = useStore();
   const [topic, setTopic] = useState("");
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,6 +91,56 @@ export default function LandingScreen() {
           pointerEvents: "none",
         }}
       />
+
+      {/* Top right monetization CTA */}
+      <div
+        style={{
+          position: "absolute",
+          top: 20,
+          right: 20,
+          zIndex: 60,
+        }}
+      >
+        {!isPro ? (
+          <button
+            id="landing-upgrade-pro-btn"
+            onClick={() => setShowPricing(true)}
+            style={{
+              padding: "7px 16px",
+              borderRadius: 99,
+              border: "1px solid var(--accent)",
+              background: "linear-gradient(135deg, var(--accent)22 0%, var(--border-node)11 100%)",
+              color: "var(--accent)",
+              fontFamily: "var(--font-family)",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+              letterSpacing: "0.04em",
+              boxShadow: "0 0 14px var(--glow-color)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span>✦</span>
+            <span>Upgrade Pro</span>
+          </button>
+        ) : (
+          <span
+            style={{
+              padding: "4px 12px",
+              borderRadius: 99,
+              background: "var(--accent)",
+              color: "var(--bg-canvas)",
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
+            }}
+          >
+            PRO ACTIVE
+          </span>
+        )}
+      </div>
 
       <div
         style={{

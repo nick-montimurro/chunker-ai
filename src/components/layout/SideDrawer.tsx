@@ -15,7 +15,7 @@ const MODE_LABELS = {
 };
 
 export default function SideDrawer({ node }: SideDrawerProps) {
-  const { currentMode, generateBranch, setSelectedNode } = useStore();
+  const { currentMode, generateBranch, setSelectedNode, setShowPricing } = useStore();
   const isOpen = node !== null;
   const meta = MODE_LABELS[currentMode];
 
@@ -243,23 +243,49 @@ export default function SideDrawer({ node }: SideDrawerProps) {
               </button>
 
               <button
+                id="drawer-upgrade-pro-btn"
+                onClick={() => setShowPricing(true)}
+                style={{
+                  width: "100%",
+                  marginTop: 8,
+                  padding: "9px",
+                  borderRadius: 8,
+                  border: "1px solid var(--accent)",
+                  background:
+                    "linear-gradient(135deg, var(--accent)18 0%, transparent 100%)",
+                  color: "var(--accent)",
+                  fontFamily: "var(--font-family)",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  transition: "all 0.2s",
+                }}
+              >
+                <span>⚡</span>
+                <span>Upgrade to Pro (Play Billing)</span>
+              </button>
+
+              <button
                 id="drawer-dismiss-btn"
                 onClick={() => setSelectedNode(null)}
                 style={{
                   width: "100%",
                   marginTop: 8,
-                  padding: "10px",
+                  padding: "8px",
                   borderRadius: 8,
-                  border: "1px solid var(--border-node)44",
+                  border: "none",
                   background: "transparent",
                   color: "var(--text-muted)",
                   fontFamily: "var(--font-family)",
                   fontSize: 12,
                   cursor: "pointer",
-                  letterSpacing: "0.03em",
                 }}
               >
-                Dismiss
+                Close Inspector
               </button>
             </div>
 
